@@ -1,0 +1,121 @@
+import requests
+import json
+from datetime import datetime
+
+def get_sportybet_data():
+    """Fetch today's football matches data from SportyBet API"""
+    url = "https://www.sportybet.com/api/ng/factsCenter/query"
+    
+    # GraphQL query to get today's football matches
+    payload = {
+        "query": """
+        {
+          groupMatches(sportId: "1", date: "today") {
+            date
+            groups {
+              groupName
+              matches {
+                matchId
+                matchStatus
+                homeTeamName
+                awayTeamName
+                startTime
+                markets {
+                  marketName
+                  outcomes {
+                    name
+                    odds
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+    }
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Origin": "https://www.sportybet.com",
+        "Referer": "https://www.sportybet.com/ng/sport/football/today",
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return None
+
+def transform_data(raw_data):
+    """Transform raw API response into structured format"""
+    if not raw_data or 'data' not in raw_data:
+        return []
+    
+    matches_data = []
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    for group in raw_data['data']['groupMatches']['groups']:
+        league = group['groupName']
+        
+        for match in group['matches']:
+            # Extract match info
+            match_info = {
+                "match_id": match['matchId'],
+                "date": today,
+                "league": league,
+                "home_team": match['homeTeamName'],
+                "away_team": match['awayTeamName'],
+                "start_time": match['startTime'],
+                "status": match['matchStatus'],
+                "markets": []
+            }
+            
+            # Process betting markets
+            for market in match['markets']:
+                market_name = market['marketName']
+                outcomes = []
+                
+                for outcome in market['outcomes']:
+                    outcomes.append({
+                        "option": outcome['name'],
+                        "odds": outcome['odds']
+                    })
+                
+                if outcomes:
+                    match_info['markets'].append({
+                        "market_type": market_name,
+                        "options": outcomes
+                    })
+            
+            matches_data.append(match_info)
+    
+    return matches_data
+
+def save_to_json(data, filename="sportybet_data.json"):
+    """Save data to JSON file"""
+    with open(filename, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"Data saved to {filename}")
+
+if __name__ == "__main__":
+    # Fetch and process data
+    raw_data = get_sportybet_data()
+    if raw_data:
+        structured_data = transform_data(raw_data)
+        
+        # Save to file
+        save_to_json(structured_data)
+        
+        # Print sample output
+        if structured_data:
+            print(f"Successfully fetched {len(structured_data)} matches")
+            print("Sample match:")
+            print(json.dumps(structured_data[0], indent=2))
+        else:
+            print("No matches found for today")
+    else:
+        print("Failed to retrieve data")
